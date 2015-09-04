@@ -12,12 +12,15 @@ def get_kernels(version):
             if l.startswith('title'):
                 kernels.append(l[6:-1])
     else:
-        for l in open('/etc/grub2.cfg'):
+        kernel = '/etc/grub2.cfg'
+        if os.path.exists('/etc/grub2-efi.cfg'):
+            kernel = '/etc/grub2-efi.cfg'
+        for l in open(kernel):
             if l.startswith('menuentry'):
                 kernels.append(l[11:l.find('--class') - 2])
     return kernels
 
-def do_reboot(version, index):
+def do_reboot(version, index, name):
     if version == 1:
         p = subprocess.Popen(["/sbin/grub", "--batch"], stdin=subprocess.PIPE)
         p.stdin.write("savedefault --default=%d --once\n" % index)
@@ -26,8 +29,9 @@ def do_reboot(version, index):
         if ret:
             raise RuntimeError, "call to grub failed! (%d)" % ret
     else:
-        #print "/sbin/grub2-reboot %d" % index
-        subprocess.call("/sbin/grub2-reboot %d" % index, shell=True)
+        print "/sbin/grub2-reboot %s" % name
+        subprocess.call("/sbin/grub2-reboot '%s'" % name, shell=True)
+        subprocess.call("/sbin/grub2-mkconfig -o /tmp/grub2.cfg", shell=True)
     subprocess.call("reboot", shell=True)
 
 #####################################################################
@@ -35,10 +39,12 @@ def do_reboot(version, index):
 if os.getuid() != 0:
     raise RuntimeError, "must be root!"
 
-if os.path.exists('/sbin/grub2-reboot'):
+if os.path.exists('/boot/grub2'):
     grub_version = 2
-else:
+elif os.patch.exists('/boot/grub'):
     grub_version = 1
+else:
+    raise RuntimeError, "No grub package (1 or 2) installed"
 
 kernel = get_kernels(grub_version)
 
@@ -52,4 +58,4 @@ else:
 if index < 0 or index >= len(kernel):
     raise ValueError, "invalid grub index %d (valid range: 0 - %d)" % (index, len(kernel)-1)
 
-do_reboot(grub_version, index)
+do_reboot(grub_version, index, kernel[index])
