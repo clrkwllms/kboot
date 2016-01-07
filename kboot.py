@@ -12,9 +12,25 @@ class Kernel(object):
         self.description = desc
         self.path = path
 
-class Grub1(object):
+class GrubBase(object):
     def __init__(self):
         self.kernels = []
+
+    def range_check(self, index):
+        if index < 0 or index >= len(self.kernels):
+            raise IndexError, "%d is out of range (0-%d valid)" % (index, len(self.kernels)-1)
+        return index
+
+    def getindex(self):
+        for i,k in enumerate(self.kernels):
+            print("%2d: %s [%s]" % (i, k.description, k.path))
+        index = int(raw_input("Select kernel to boot: "))
+        return self.range_check(index)
+
+
+class Grub1(GrubBase):
+    def __init__(self):
+        GrubBase.__init__(self)
         index = 0
         for l in open('/etc/grub.conf'):
             l = l.strip()
@@ -27,17 +43,6 @@ class Grub1(object):
                 index += 1
                 continue
 
-    def range_check(self, index):
-        if index < 0 or index >= len(self.kernels):
-            raise IndexError, "%d is out of range (0-%d valid)" % (index, len(self.kernels)-1)
-        return index
-
-    def getindex(self):
-        for i,k in enumerate(self.kernels):
-            print("%2d: %s" % (i, k.description, k.path))
-        index = int(raw_input("Select kernel to boot: "))
-        return self.range_check(index)
-
     def boot_once(self, index):
         p = subprocess.Popen(["/sbin/grub", "--batch"], stdin=subprocess.PIPE)
         p.stdin.write("savedefault --default=%d --once\n" % index)
@@ -48,8 +53,9 @@ class Grub1(object):
         subprocess.call("reboot", shell=True)
 
 
-class Grub2(object):
+class Grub2(GrubBase):
     def __init__(self):
+        GrubBase.__init__(self)
 
         # make sure grub is configured properly
         for l in open("/etc/default/grub", "r"):
@@ -58,7 +64,6 @@ class Grub2(object):
                 if l.split('=')[1].strip() != "saved":
                     raise RuntimeError, "Cannot do onetime boot! (set GRUB_DEFAULT=saved in /etc/default/grub)"
 
-        self.kernels = []
         index = 0
         path = "/etc/grub2-efi.cfg"
         if not os.path.exists(path):
@@ -76,17 +81,6 @@ class Grub2(object):
                 self.kernels.append(Kernel(index, k, p))
                 index += 1
                 continue
-
-    def range_check(self, index):
-        if index < 0 or index >= len(self.kernels):
-            raise IndexError, "%d is out of range (0-%d valid)" % (index, len(self.kernels)-1)
-        return index
-
-    def getindex(self):
-        for k in self.kernels:
-            print("%2d: %s: %s" % (k.index, k.description, k.path))
-        index = int(raw_input("Select kernel to boot: "))
-        return self.range_check(index)
 
     def boot_once(self, index):
         try:
