@@ -6,15 +6,17 @@ import os.path
 import subprocess
 
 class Kernel(object):
-    __slots__ = ('index', 'description', 'path')
-    def __init__(self, index, desc, path):
+    __slots__ = ('index', 'description', 'path', 'isrt')
+    def __init__(self, index, desc, path, isrt=False):
         self.index = index
         self.description = desc
         self.path = path
+        self.isrt = isrt
 
 class GrubBase(object):
     def __init__(self):
         self.kernels = []
+        self.default_idx = -1
 
     def range_check(self, index):
         if index < 0 or index >= len(self.kernels):
@@ -22,10 +24,34 @@ class GrubBase(object):
         return index
 
     def getindex(self):
-        for i,k in enumerate(self.kernels):
-            print("%2d: %s [%s]" % (i, k.description, k.path))
-        index = int(raw_input("Select kernel to boot: "))
+        index = raw_input("Select kernel to boot [%d]: " % self.default_idx)
+        if index == '':
+            index = self.default_idx
+        index = int(index)
         return self.range_check(index)
+
+    def reboot(self):
+        print("rebooting")
+        subprocess.call("reboot", shell=True)
+
+    def isrt(self, path):
+        if path.find(".rt") != -1:
+            return True
+        if path.find("-rt") != -1:
+            return True
+        return False
+
+    def showkernels(self):
+        for i,k in enumerate(self.kernels):
+            if i == self.default_idx:
+                output = "*"
+            else:
+                output = " "
+            if k.isrt:
+                output += "r %2d: %s" % (i, k.description)
+            else:
+                output += "  %2d: %s" % (i, k.description)
+            print output
 
 
 class Grub1(GrubBase):
@@ -35,13 +61,15 @@ class Grub1(GrubBase):
         for l in open('/etc/grub.conf'):
             l = l.strip()
             if l.startswith('title'):
-                k = Kernel(l[6:-1], index)
+                k = l[6:-1]
                 continue
             if l.startswith('kernel'):
                 p = l.split()[1]
-                self.kernels.append(Kernel(index, k, p))
+                self.kernels.append(Kernel(index, k, p, self.isrt(p)))
                 index += 1
                 continue
+            if l.startswith('default'):
+                self.default_idx = int(l.split('=')[1])
 
     def boot_once(self, index):
         p = subprocess.Popen(["/sbin/grub", "--batch"], stdin=subprocess.PIPE)
@@ -50,8 +78,7 @@ class Grub1(GrubBase):
         ret = p.wait()
         if ret:
             raise RuntimeError, "call to grub failed! (%d)" % ret
-        subprocess.call("reboot", shell=True)
-
+        self.reboot()
 
 class Grub2(GrubBase):
     def __init__(self):
@@ -64,6 +91,12 @@ class Grub2(GrubBase):
                 if l.split('=')[1].strip() != "saved":
                     raise RuntimeError, "Cannot do onetime boot! (set GRUB_DEFAULT=saved in /etc/default/grub)"
 
+        saved_entry=""
+        p = subprocess.Popen("grub2-editenv list", shell=True, stdout=subprocess.PIPE)
+        for l in p.stdout.readlines():
+            l = l.strip()
+            if l.startswith("saved_entry"):
+                saved_entry=l.split('=')[1]
         index = 0
         path = "/etc/grub2-efi.cfg"
         if not os.path.exists(path):
@@ -78,7 +111,9 @@ class Grub2(GrubBase):
                 continue
             if l.startswith('linux'):
                 p = l.split()[1]
-                self.kernels.append(Kernel(index, k, p))
+                self.kernels.append(Kernel(index, k, p, self.isrt(p)))
+                if k == saved_entry:
+                    self.default_idx = index
                 index += 1
                 continue
 
@@ -90,8 +125,7 @@ class Grub2(GrubBase):
             raise
         subprocess.call("/sbin/grub2-reboot '%s'" % k.description, shell=True)
         subprocess.call("/sbin/grub2-mkconfig -o /tmp/grub2.cfg", shell=True)
-        subprocess.call("reboot", shell=True)
-
+        self.reboot()
 
 def get_grub_version():
     p = subprocess.Popen(['rpm',  '-q', 'grub'], stdout=subprocess.PIPE)
@@ -114,6 +148,7 @@ if __name__ == "__main__":
     try:
         index = int(sys.argv[1])
     except:
+        grub.showkernels()
         index = grub.getindex()
 
     grub.boot_once(index)
