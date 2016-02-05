@@ -72,7 +72,7 @@ class Grub1(GrubBase):
                 self.default_idx = int(l.split('=')[1])
 
     def boot_once(self, index):
-        if index != self.default_index:
+        if index != self.default_idx:
             p = subprocess.Popen(["/sbin/grub", "--batch"], stdin=subprocess.PIPE)
             p.stdin.write("savedefault --default=%d --once\n" % index)
             p.stdin.close()
@@ -119,7 +119,7 @@ class Grub2(GrubBase):
                 continue
 
     def boot_once(self, index):
-        if index != self.default_index:
+        if index != self.default_idx:
             try:
                 k = self.kernels[index]
             except IndexError as e:
