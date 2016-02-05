@@ -72,12 +72,13 @@ class Grub1(GrubBase):
                 self.default_idx = int(l.split('=')[1])
 
     def boot_once(self, index):
-        p = subprocess.Popen(["/sbin/grub", "--batch"], stdin=subprocess.PIPE)
-        p.stdin.write("savedefault --default=%d --once\n" % index)
-        p.stdin.close()
-        ret = p.wait()
-        if ret:
-            raise RuntimeError, "call to grub failed! (%d)" % ret
+        if index != self.default_index:
+            p = subprocess.Popen(["/sbin/grub", "--batch"], stdin=subprocess.PIPE)
+            p.stdin.write("savedefault --default=%d --once\n" % index)
+            p.stdin.close()
+            ret = p.wait()
+            if ret:
+                raise RuntimeError, "call to grub failed! (%d)" % ret
         self.reboot()
 
 class Grub2(GrubBase):
@@ -118,13 +119,14 @@ class Grub2(GrubBase):
                 continue
 
     def boot_once(self, index):
-        try:
-            k = self.kernels[index]
-        except IndexError as e:
-            print("index %d is not a valid grub menu index!")
-            raise
-        subprocess.call("/sbin/grub2-reboot '%s'" % k.description, shell=True)
-        subprocess.call("/sbin/grub2-mkconfig -o /tmp/grub2.cfg", shell=True)
+        if index != self.default_index:
+            try:
+                k = self.kernels[index]
+            except IndexError as e:
+                print("index %d is not a valid grub menu index!")
+                raise
+            subprocess.call("/sbin/grub2-reboot '%s'" % k.description, shell=True)
+            subprocess.call("/sbin/grub2-mkconfig -o /tmp/grub2.cfg", shell=True)
         self.reboot()
 
 def get_grub_version():
