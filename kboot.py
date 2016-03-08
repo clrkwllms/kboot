@@ -1,10 +1,16 @@
 #!/usr/bin/python -tt
+#
+# script to selectively boot one grub entry *one time* and not
+# affect the default boot entry
+#
+#  Copyright 2016 Clark Williams <williams@redhat.com>
 
 import os
 import sys
 import os.path
 import subprocess
 
+# class for grub entries
 class Kernel(object):
     __slots__ = ('index', 'description', 'path', 'isrt')
     def __init__(self, index, desc, path, isrt=False):
@@ -13,16 +19,19 @@ class Kernel(object):
         self.path = path
         self.isrt = isrt
 
+# base class for both Grub1 and Grub2
 class GrubBase(object):
     def __init__(self):
         self.kernels = []
         self.default_idx = -1
 
+    # verify that a user-input index is valid
     def range_check(self, index):
         if index < 0 or index >= len(self.kernels):
             raise IndexError, "%d is out of range (0-%d valid)" % (index, len(self.kernels)-1)
         return index
 
+    # grab an input from the user
     def getindex(self):
         index = raw_input("Select kernel to boot [%d]: " % self.default_idx)
         if index == '':
@@ -34,6 +43,7 @@ class GrubBase(object):
         print("rebooting")
         subprocess.call("reboot", shell=True)
 
+    # return true if the selected path is a realtime kernel
     def isrt(self, path):
         if path.find(".rt") != -1:
             return True
@@ -41,6 +51,7 @@ class GrubBase(object):
             return True
         return False
 
+    # display available kernels
     def showkernels(self):
         for i,k in enumerate(self.kernels):
             if i == self.default_idx:
@@ -54,6 +65,7 @@ class GrubBase(object):
             print output
 
 
+# deal with an installed Grub1 (RHEL6 and before)
 class Grub1(GrubBase):
     def __init__(self):
         GrubBase.__init__(self)
@@ -81,6 +93,7 @@ class Grub1(GrubBase):
                 raise RuntimeError, "call to grub failed! (%d)" % ret
         self.reboot()
 
+# deal with installed Grub2
 class Grub2(GrubBase):
     def __init__(self):
         GrubBase.__init__(self)
@@ -129,6 +142,7 @@ class Grub2(GrubBase):
             subprocess.call("/sbin/grub2-mkconfig -o /tmp/grub2.cfg", shell=True)
         self.reboot()
 
+# figure out what grub we have installed
 def get_grub_version():
     p = subprocess.Popen(['rpm',  '-q', 'grub'], stdout=subprocess.PIPE)
     out = p.stdout.readline()
@@ -136,6 +150,9 @@ def get_grub_version():
         return 2
     return 1
 
+#
+# main logic
+#
 if __name__ == "__main__":
 
     if os.getuid() != 0:
