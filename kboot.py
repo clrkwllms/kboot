@@ -33,7 +33,10 @@ class GrubBase(object):
 
     # grab an input from the user
     def getindex(self):
-        index = raw_input("Select kernel to boot [%d]: " % self.default_idx)
+        try:
+            index = raw_input("Select kernel to boot [%d]: " % self.default_idx)
+        except KeyboardInterrupt:
+            sys.exit(0)
         if index == '':
             index = self.default_idx
         index = int(index)
