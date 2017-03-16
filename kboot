@@ -3,12 +3,13 @@
 # script to selectively boot one grub entry *one time* and not
 # affect the default boot entry
 #
-#  Copyright 2016 Clark Williams <williams@redhat.com>
+#  Copyright 2016,2017 Clark Williams <williams@redhat.com>
 
 import os
 import sys
 import os.path
 import subprocess
+import argparse
 
 # class for grub entries
 class Kernel(object):
@@ -21,9 +22,12 @@ class Kernel(object):
 
 # base class for both Grub1 and Grub2
 class GrubBase(object):
-    def __init__(self):
+    def __init__(self, args):
         self.kernels = []
         self.default_idx = -1
+        self.verbose = args.verbose
+        self.dry_run = args.dry_run
+        self.realtime = args.realtime
 
     # verify that a user-input index is valid
     def range_check(self, index):
@@ -34,7 +38,7 @@ class GrubBase(object):
     # grab an input from the user
     def getindex(self):
         try:
-            index = raw_input("Select kernel to boot [%d]: " % self.default_idx)
+            index = raw_input("Select kernel [%d]: " % self.default_idx)
         except KeyboardInterrupt:
             sys.exit(0)
         if index == '':
@@ -43,6 +47,9 @@ class GrubBase(object):
         return self.range_check(index)
 
     def reboot(self):
+        if self.dry_run:
+            print ("dry-run: reboot called")
+            return
         print("rebooting")
         subprocess.call("reboot", shell=True)
 
@@ -57,6 +64,8 @@ class GrubBase(object):
     # display available kernels
     def showkernels(self):
         for i,k in enumerate(self.kernels):
+            if self.realtime and not k.isrt:
+                continue
             if i == self.default_idx:
                 output = "*"
             else:
@@ -67,11 +76,14 @@ class GrubBase(object):
                 output += "  %2d: %s" % (i, k.description)
             print output
 
+    def info(self, str):
+        if self.verbose:  print(str)
 
 # deal with an installed Grub1 (RHEL6 and before)
 class Grub1(GrubBase):
-    def __init__(self):
-        GrubBase.__init__(self)
+    def __init__(self, args):
+        GrubBase.__init__(self, args)
+
         index = 0
         for l in open('/etc/grub.conf'):
             l = l.strip()
@@ -88,6 +100,9 @@ class Grub1(GrubBase):
 
     def boot_once(self, index):
         if index != self.default_idx:
+            if self.dry_run:
+                print("dry-run: boot index %d (%s)" % (index, self.kernels[index].description))
+                return
             p = subprocess.Popen(["/sbin/grub", "--batch"], stdin=subprocess.PIPE)
             p.stdin.write("savedefault --default=%d --once\n" % index)
             p.stdin.close()
@@ -96,10 +111,22 @@ class Grub1(GrubBase):
                 raise RuntimeError, "call to grub failed! (%d)" % ret
         self.reboot()
 
-# deal with installed Grub2
+    def set_as_default(self, index):
+        if self.dry_run:
+            print ("dry-run: selected default: %s" % self.kernels[index].description)
+            return
+        self.info("setting %s as default kernel" %  self.kernels[index].description)
+        p = subprocess.Popen(["/sbin/grub", "--batch"], stdin=subprocess.PIPE)
+        p.stdin.write("savedefault --default=%d\n" % index)
+        p.stdin.close()
+        ret = p.wait()
+        if ret:
+            raise RuntimeError, "call to grub failed! (%d)" % ret
+
+# deal with installed Grub2 (RHEL7+, Fedora)
 class Grub2(GrubBase):
-    def __init__(self):
-        GrubBase.__init__(self)
+    def __init__(self, args):
+        GrubBase.__init__(self, args)
 
         # make sure grub is configured properly
         for l in open("/etc/default/grub", "r"):
@@ -141,9 +168,23 @@ class Grub2(GrubBase):
             except IndexError as e:
                 print("index %d is not a valid grub menu index!")
                 raise
+            if self.dry_run:
+                print("dry-run: boot index %d : %s" % (index, k.description))
+                return
             subprocess.call("/sbin/grub2-reboot '%s'" % k.description, shell=True)
             subprocess.call("/sbin/grub2-mkconfig -o /tmp/grub2.cfg", shell=True)
         self.reboot()
+
+    def set_as_default(self, index):
+        cmd = "grub2-set-default '%s'" % self.kernels[index].description
+        if self.dry_run:
+            print("dry-run: cmd %s" % cmd)
+            return
+        self.info("cmd: %s" % cmd)
+        if not self.dry_run:
+            subprocess.call(cmd, shell=True)
+            self.regen_config()
+
 
 # figure out what grub we have installed
 def get_grub_version():
@@ -153,6 +194,13 @@ def get_grub_version():
         return 2
     return 1
 
+def get_grub_instance(args):
+    grubversion = get_grub_version()
+    if grubversion == 1:
+        return Grub1(args)
+    else:
+        return Grub2(args)
+
 #
 # main logic
 #
@@ -161,11 +209,24 @@ if __name__ == "__main__":
     if os.getuid() != 0:
         raise RuntimeError, "must be root!"
 
-    grubversion = get_grub_version()
-    if grubversion == 1:
-        grub = Grub1()
-    else:
-        grub = Grub2()
+    parser = argparse.ArgumentParser(description="select a kernel to boot once")
+    parser.add_argument('-v', '--verbose', action='store_true',
+                        help='verbose output')
+    parser.add_argument('-s', '--set-default', action='store_true',
+                        help='just set the default boot kernel')
+    parser.add_argument('-d', '--dry-run', action='store_true',
+                        help='dry-run, do not execute commands')
+    parser.add_argument('-r', '--realtime', action='store_true',
+                        help='display only realtime kernels for selection')
+
+    args = parser.parse_args(sys.argv[1:])
+
+    grub = get_grub_instance(args)
+
+    if args.set_default:
+        grub.showkernels()
+        grub.set_as_default(grub.getindex())
+        sys.exit(0)
 
     try:
         index = int(sys.argv[1])
