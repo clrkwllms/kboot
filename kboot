@@ -13,12 +13,27 @@ import argparse
 
 # class for grub entries
 class Kernel(object):
-    __slots__ = ('index', 'description', 'path', 'isrt')
-    def __init__(self, index, desc, path, isrt=False):
+    __slots__ = ('index', 'description', 'path','initrd', 'isrt')
+    def __init__(self, index, desc, path, initrd, isrt=False):
         self.index = index
         self.description = desc
-        self.path = path
+        p = "/boot%s" % path
+        if not os.path.exists(p):
+            raise RuntimeError, "invalid boot image path: %s" % p
+        self.path = p
         self.isrt = isrt
+        r = "/boot%s" % initrd
+        if not os.path.exists(r):
+            raise RuntimeError, "invalid initrd image path: %s" % r
+        self.initrd = r
+
+    def show(self):
+        print("data for kernel at index %d:" % self.index)
+        print("   %s" % self.description)
+        print("   path: %s" % self.path)
+        print("   isrt: %s" % self.isrt)
+        print("   initrd: %s" % self.initrd)
+
 
 # base class for both Grub1 and Grub2
 class GrubBase(object):
@@ -79,6 +94,20 @@ class GrubBase(object):
     def info(self, str):
         if self.verbose:  print(str)
 
+    def kexec(self, index):
+        k = self.kernels[index]
+        cmd = ['kexec',  '--load',  k.path,  '--reuse-cmdline' '--initrd=%s' % k.initrd ]
+        info("kexec loading kernel: %s" % k.path)
+        ret = subprocess.call(cmd):
+        if ret
+            print("error loading kexec kernel %s" % k.path)
+            sys.exit(ret)
+        info("kexec execing loaded kernel")
+        ret = subprocess.call(['kexec', '--exec'])
+        if ret:
+            print("error kexec'ing loaded kernel %s" % k.path)
+            sys.exit(ret)
+
 # deal with an installed Grub1 (RHEL6 and before)
 class Grub1(GrubBase):
     def __init__(self, args):
@@ -92,7 +121,10 @@ class Grub1(GrubBase):
                 continue
             if l.startswith('kernel'):
                 p = l.split()[1]
-                self.kernels.append(Kernel(index, k, p, self.isrt(p)))
+                continue
+            if l.startswith('initrd'):
+                r = l.split()[1]
+                self.kernels.append(Kernel(index, k, p, r, self.isrt(p)))
                 index += 1
                 continue
             if l.startswith('default'):
@@ -155,7 +187,10 @@ class Grub2(GrubBase):
                 continue
             if l.startswith('linux'):
                 p = l.split()[1]
-                self.kernels.append(Kernel(index, k, p, self.isrt(p)))
+                continue
+            if l.startswith('initrd'):
+                r = l.split()[1]
+                self.kernels.append(Kernel(index, k, p, r, self.isrt(p)))
                 if k == saved_entry:
                     self.default_idx = index
                 index += 1
@@ -218,6 +253,8 @@ if __name__ == "__main__":
                         help='dry-run, do not execute commands')
     parser.add_argument('-r', '--realtime', action='store_true',
                         help='display only realtime kernels for selection')
+    parser.add_argument('-k', '--kexec', action='store_true',
+                        help='use kexec rather than reboot')
 
     args = parser.parse_args(sys.argv[1:])
 
@@ -234,4 +271,7 @@ if __name__ == "__main__":
         grub.showkernels()
         index = grub.getindex()
 
-    grub.boot_once(index)
+    if args.kexec:
+        grub.kexec(index)
+    else:
+        grub.boot_once(index)
