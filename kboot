@@ -100,13 +100,13 @@ class GrubBase(object):
 
     def kexec(self, index):
         k = self.kernels[index]
-        cmd = ['kexec',  '--load',  k.path,  '--reuse-cmdline' '--initrd=%s' % k.initrd ]
-        info("kexec loading kernel: %s" % k.path)
-        ret = subprocess.call(cmd):
-        if ret
+        cmd = ['kexec',  '--load',  k.path,  '--reuse-cmdline', '--initrd=%s' % k.initrd ]
+        print("kexec loading kernel: %s" % k.path)
+        ret = subprocess.call(cmd)
+        if ret:
             print("error loading kexec kernel %s" % k.path)
             sys.exit(ret)
-        info("kexec execing loaded kernel")
+        print("kexec execing loaded kernel")
         ret = subprocess.call(['kexec', '--exec'])
         if ret:
             print("error kexec'ing loaded kernel %s" % k.path)
