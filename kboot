@@ -4,6 +4,8 @@
 # affect the default boot entry
 #
 #  Copyright 2016,2017 Clark Williams <williams@redhat.com>
+#
+#  2017-11-22: added kexec capability
 
 import os
 import sys
@@ -98,6 +100,7 @@ class GrubBase(object):
     def debug(self, str):
         if self.debug: print(str)
 
+    # pick a kernel from the list and kexec it (rather than rebooting)
     def kexec(self, index):
         k = self.kernels[index]
         cmd = ['kexec',  '--load',  k.path,  '--reuse-cmdline', '--initrd=%s' % k.initrd ]
@@ -177,12 +180,18 @@ class Grub2(GrubBase):
             l = l.strip()
             if l.startswith("saved_entry"):
                 saved_entry=l.split('=')[1]
+
+        #
+        # still not sure the best way to decide if we're booted through EFI or traditional BIOS
+        # start with checking for the existance of the efi grub file and if that
+        # doesn't exist, fall back on the regular grub file
+        #
         index = 0
         path = "/etc/grub2-efi.cfg"
         if not os.path.exists(path):
             path = "/etc/grub2.cfg"
         if not os.path.exists(path):
-            raise RuntimeError, "No /etc/grub2-*.cfg file found!"
+            raise RuntimeError, "No /etc/grub2*.cfg file found!"
 
         for l in open(path):
             l = l.strip()
