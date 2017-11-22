@@ -43,6 +43,7 @@ class GrubBase(object):
         self.verbose = args.verbose
         self.dry_run = args.dry_run
         self.realtime = args.realtime
+        self.debug = args.debug
 
     # verify that a user-input index is valid
     def range_check(self, index):
@@ -93,6 +94,9 @@ class GrubBase(object):
 
     def info(self, str):
         if self.verbose:  print(str)
+
+    def debug(self, str):
+        if self.debug: print(str)
 
     def kexec(self, index):
         k = self.kernels[index]
@@ -247,6 +251,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="select a kernel to boot once")
     parser.add_argument('-v', '--verbose', action='store_true',
                         help='verbose output')
+    parser.add_argument('-D', '--debug', action='store_true',
+                        help='turn on debugging prints')
     parser.add_argument('-s', '--set-default', action='store_true',
                         help='just set the default boot kernel')
     parser.add_argument('-d', '--dry-run', action='store_true',
